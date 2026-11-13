@@ -168,12 +168,12 @@ def _apply_weather_theme(
     day_text_theme = """
         [data-testid="stMain"],
         [data-testid="stMain"] *:not(svg):not(path) {
-            color: #17251d !important;
+            color: #263746 !important;
         }
-        [data-testid="stMain"] a { color: #123e68 !important; }
+        [data-testid="stMain"] a { color: #244f70 !important; }
         [data-testid="stMain"] .stButton > button {
-            color: #17251d !important;
-            border-color: #465b4c !important;
+            color: #263746 !important;
+            border-color: #657887 !important;
             background-color: rgba(255,255,255,.72) !important;
         }
     """ if is_daylight else ""
