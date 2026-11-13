@@ -266,11 +266,43 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
                 st.success("Мафийн тал яллаа!" if winner == "mafia" else "Иргэд яллаа!")
             else:
                 st.success("The Mafia wins!" if winner == "mafia" else "The citizens win!")
+            role_names = {
+                "mafia": ("Мафийн тал", "Mafia"),
+                "doctor": ("Эмч", "Doctor"),
+                "detective": ("Цагдаа", "Detective"),
+                "citizen": ("Иргэн", "Citizen"),
+            }
+            st.subheader("🎭 Тоглогчдын дүр" if mn else "🎭 Player roles")
+            for player in players:
+                if player.get("is_host"):
+                    continue
+                role = role_names.get(player.get("role"), ("Тоглогч", "Player"))[0 if mn else 1]
+                st.write(f"• {player['name']}: {role}")
+
             if is_host:
                 _render_mayor_night_report(
                     db, room_id, players,
                     int(room.get("round_number", 1)), lang,
                 )
+                if st.button("➕ Шинэ өрөө үүсгэх" if mn else "➕ Create a new room", key="new_room_after_game"):
+                    try:
+                        new_room, new_host = _create_mafia_room(db, current_player["name"])
+                        st.session_state["mafia_room_id"] = new_room["id"]
+                        st.session_state["mafia_player_id"] = new_host["id"]
+                        st.rerun()
+                    except Exception as exc:
+                        st.error("Шинэ өрөө үүсгэж чадсангүй." if mn else "Could not create a new room.")
+                        with st.expander("Техник мэдээлэл" if mn else "Technical details"):
+                            st.code(f"{type(exc).__name__}: {exc}")
+            else:
+                st.info(
+                    "Шинэ тоглолтод орохын тулд дууссан өрөөнөөс гараад Хотын даргын шинэ өрөөний кодоор нэгдэнэ үү."
+                    if mn else "To play again, leave this finished room and join the Mayor's new room with its new code."
+                )
+                if st.button("Шинэ өрөөнд нэгдэх" if mn else "Join a new room", key="leave_finished_room"):
+                    st.session_state.pop("mafia_room_id", None)
+                    st.session_state.pop("mafia_player_id", None)
+                    st.rerun()
         else:
             st.info(
                 f"Тоглоомын үе: {phase}"
@@ -875,6 +907,37 @@ def _render_mayor_night_report(db, room_id: str, players: list[dict],
     except Exception as exc:
         st.caption(("Нууц тайлан ачаалж чадсангүй: " if mn else "Could not load private report: ") + str(exc))
 
+def _create_mafia_room(db, host_name: str) -> tuple[dict, dict]:
+    code = "".join(
+        secrets.choice(string.ascii_uppercase + string.digits)
+        for _ in range(6)
+    )
+    room = (
+        db.table("game_rooms")
+        .insert({
+            "code": code,
+            "phase": "lobby",
+            "round_number": 0,
+            "host_name": host_name,
+        })
+        .execute()
+        .data[0]
+    )
+    host = (
+        db.table("game_players")
+        .insert({
+            "room_id": room["id"],
+            "name": host_name,
+            "role": None,
+            "is_alive": True,
+            "is_host": True,
+        })
+        .execute()
+        .data[0]
+    )
+    return room, host
+
+
 def _render_create_join(db, lang: str) -> None:
     mn = lang == "mn"
 
@@ -889,35 +952,8 @@ def _render_create_join(db, lang: str) -> None:
         if not host_name:
             st.warning("Нэрээ оруулна уу." if mn else "Enter your name.")
         else:
-            code = "".join(
-                secrets.choice(string.ascii_uppercase + string.digits)
-                for _ in range(6)
-            )
             try:
-                room = (
-                    db.table("game_rooms")
-                    .insert({
-                        "code": code,
-                        "phase": "lobby",
-                        "round_number": 0,
-                        "host_name": host_name,
-                    })
-                    .execute()
-                    .data[0]
-                )
-
-                player = (
-                    db.table("game_players")
-                    .insert({
-                        "room_id": room["id"],
-                        "name": host_name,
-                        "role": None,
-                        "is_alive": True,
-                        "is_host": True,
-                    })
-                    .execute()
-                    .data[0]
-                )
+                room, player = _create_mafia_room(db, host_name)
 
                 st.session_state["mafia_room_id"] = room["id"]
                 st.session_state["mafia_player_id"] = player["id"]
