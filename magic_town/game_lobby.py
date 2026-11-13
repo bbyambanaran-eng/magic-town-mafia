@@ -2,6 +2,7 @@ import secrets
 import string
 import random
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -13,40 +14,148 @@ ROOM_CAPACITY = 12
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def _game_weather() -> dict:
-    return fetch_weather()["payload"]
+def _game_weather(day_key: str) -> dict:
+    # Include Ulaanbaatar local date in the cache key so midnight starts a fresh fetch.
+    return fetch_weather()
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def _game_plants() -> dict:
-    return fetch_plants()["payload"]
+    return fetch_plants()
 
 
 def _render_real_world_context(lang: str) -> None:
     mn = lang == "mn"
+    local_zone = ZoneInfo("Asia/Ulaanbaatar")
+    now_local = datetime.now(local_zone).replace(tzinfo=None)
+    today_key = now_local.date().isoformat()
+    st.markdown(
+        "### 🌦️ Улаанбаатарын бодит цаг агаар"
+        if mn else "### 🌦️ Live Ulaanbaatar weather"
+    )
     try:
-        payload = _game_weather()
+        record = _game_weather(today_key)
+        payload = record["payload"]
         current = payload["current"]
-        today = payload["daily"][0]
-        current_time = datetime.fromisoformat(current["time"])
+        today = next(
+            (day for day in payload["daily"] if day.get("date") == today_key),
+            None,
+        )
+        if today is None:
+            st.info(
+                f"{today_key} өдрийн цаг агаарын дата одоогоор ирээгүй байна."
+                if mn else f"Weather data for {today_key} has not arrived yet."
+            )
+            return
+        zone = ZoneInfo(payload.get("timezone", "Asia/Ulaanbaatar"))
+        now_local = datetime.now(zone).replace(tzinfo=None)
         sunrise = datetime.fromisoformat(today["sunrise"])
         sunset = datetime.fromisoformat(today["sunset"])
-        is_daylight = sunrise <= current_time < sunset
-        sky = ("Гадаа өдөр" if is_daylight else "Гадаа шөнө") if mn else ("Outside: daytime" if is_daylight else "Outside: nighttime")
-        phase_text = ("Тоглоомын үе" if mn else "Game phase")
-        weather_text = weather_label(int(current["weather_code"]), lang)
+        is_daylight = sunrise <= now_local < sunset
+        _apply_day_night_theme(is_daylight)
+
+        sky = (
+            ("☀️ Өдөр" if is_daylight else "🌙 Шөнө")
+            if mn else ("☀️ Day" if is_daylight else "🌙 Night")
+        )
+        condition = weather_label(int(current["weather_code"]), lang)
+        temp = current.get("temperature_c")
+        temp_text = f"{temp:.1f} °C" if isinstance(temp, (int, float)) else "—"
+        low, high = today.get("temp_min"), today.get("temp_max")
+        forecast = (
+            f"{low:.1f}° – {high:.1f}°C" if isinstance(low, (int, float)) and isinstance(high, (int, float))
+            else condition
+        )
+        first, second, third = st.columns(3)
+        first.metric("Одоо" if mn else "Now", temp_text, condition)
+        second.metric("Гадаах үе" if mn else "Outside", sky)
+        third.metric("Өнөөдрийн хэм" if mn else "Today's range", forecast)
         st.caption(
-            f"{sky} · {phase_text}: бодит нар мандах {today['sunrise'][-5:]} / жаргах {today['sunset'][-5:]} · {weather_text}"
-            if mn
-            else f"{sky} · Real sunrise {today['sunrise'][-5:]} / sunset {today['sunset'][-5:]} · {weather_text}"
+            f"Огноо: {today['date']} · Open-Meteo · мэдээний цаг {current['time']} · нар мандах {today['sunrise'][-5:]} / жаргах {today['sunset'][-5:]}"
+            if mn else
+            f"Date: {today['date']} · Open-Meteo · report time {current['time']} · sunrise {today['sunrise'][-5:]} / sunset {today['sunset'][-5:]}"
         )
     except Exception:
-        st.caption(
-            "Гадаах өдөр/шөнийн бодит мэдээлэл одоогоор ачаалсангүй. Тоглоомын үе хэвийн үргэлжилнэ."
-            if mn
-            else "Real-world day/night data is unavailable right now. The game phase continues normally."
+        st.info(
+            "Цаг агаарын бодит дата ирээгүй тул өдөр/шөнийн төрхийг өөрчлөөгүй. Тоглоом хэвийн үргэлжилнэ."
+            if mn else
+            "Live weather is unavailable, so the day/night background was not changed. The game continues."
         )
 
+
+def _apply_day_night_theme(is_daylight: bool) -> None:
+    if is_daylight:
+        background = """
+            radial-gradient(circle at 86% 11%, #ffe59a 0 34px, #ffe59a55 36px 60px, transparent 62px),
+            linear-gradient(180deg, #315d76 0%, #314f5c 48%, #263c35 100%)
+        """
+    else:
+        background = """
+            radial-gradient(circle at 86% 11%, #f2edcf 0 23px, #f2edcf55 25px 43px, transparent 45px),
+            radial-gradient(circle at 17% 14%, #ffffff 0 1px, transparent 2px),
+            radial-gradient(circle at 35% 25%, #ffffff 0 1px, transparent 2px),
+            radial-gradient(circle at 71% 31%, #ffffff 0 1px, transparent 2px),
+            radial-gradient(circle at 57% 12%, #ffffff 0 1px, transparent 2px),
+            linear-gradient(180deg, #091322 0%, #111a2a 50%, #090d15 100%)
+        """
+    st.markdown(
+        f"""
+        <style>
+        [data-testid="stAppViewContainer"] {{ background: {background}; }}
+        [data-testid="stHeader"] {{ background: transparent; }}
+        [data-testid="stSidebar"] {{ background-color: rgba(15, 18, 25, .88); }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_doctor_plant_context(lang: str, round_number: int) -> None:
+    mn = lang == "mn"
+    with st.container(border=True):
+        st.markdown(
+            "**🌿 Монголын бодит ургамлын бүртгэл**"
+            if mn else "**🌿 Real plant record from Mongolia**"
+        )
+        try:
+            record = _game_plants()
+            payload = record["payload"]
+            named_records = [
+                item for item in payload.get("records", [])
+                if item.get("scientific_name")
+            ]
+            if not named_records:
+                st.info(
+                    "GBIF нэртэй ургамлын бүртгэл ирүүлсэнгүй."
+                    if mn else "GBIF returned no named plant record."
+                )
+                return
+
+            item = named_records[(max(1, round_number) - 1) % len(named_records)]
+            st.write(f"**{item['scientific_name']}**")
+            details = [
+                value for value in (
+                    item.get("family"), item.get("state_province"),
+                    item.get("locality"), item.get("event_date"),
+                ) if value
+            ]
+            if details:
+                st.caption(" · ".join(details))
+            if (item.get("occurrence_url") or "").startswith("https://"):
+                st.markdown(
+                    f"[GBIF ажиглалтын бүртгэл]({item['occurrence_url']})"
+                    if mn else f"[GBIF occurrence record]({item['occurrence_url']})"
+                )
+            st.caption(
+                "Зөвхөн эмчид харагдана; ургамлын дата эмчлэх чадварт нөлөөлөхгүй. GBIF бүртгэл нь ургамлын тоо толгой биш."
+                if mn else
+                "Visible only to the Doctor; plant data does not affect the protect action. GBIF records are not population counts."
+            )
+        except Exception:
+            st.info(
+                "GBIF-ийн ургамлын дата одоогоор ачаалсангүй."
+                if mn else "GBIF plant data is unavailable right now."
+            )
 
 @st.fragment(run_every="3s")
 def render_game_lobby(lang: str) -> None:
@@ -740,24 +849,9 @@ def _render_night(db, room_id: str, player_id: str, players: list[dict],
                     st.code(f"{type(exc).__name__}: {exc}")
 
     if me and me.get("is_alive", True) and me.get("role") == "doctor":
-        st.subheader("🌿 Эмчийн сонголт" if mn else "🌿 Doctor action")
-        try:
-            records = _game_plants().get("records", [])
-            named = [r for r in records if r.get("scientific_name")]
-            if named:
-                record = named[(round_number - 1) % len(named)]
-                plant_name = record["scientific_name"]
-                st.caption(
-                    f"GBIF бүртгэлийн ургамал: {plant_name}. Зөвхөн тоглоомын зохиомол эмчилгээ; бодит эмчилгээний мэдээлэл биш."
-                    if mn else f"GBIF record used as a fictional game remedy: {plant_name}. This is not medical advice or evidence of a real treatment."
-                )
-                if record.get("occurrence_url"):
-                    st.markdown(f"[GBIF бүртгэлийг харах]({record['occurrence_url']})" if mn else f"[View GBIF record]({record['occurrence_url']})")
-            else:
-                st.info("GBIF ургамлын дата одоогоор олдсонгүй; зохиомол ургамал ашиглахгүй." if mn else "No GBIF plant record is available; no plant is invented.")
-        except Exception:
-            st.info("GBIF дата ачаалсангүй; эмчийн үйлдэл үргэлжилж болно." if mn else "GBIF data is unavailable; the doctor action can still continue.")
-
+        st.subheader("🛡️ Эмчийн сонголт" if mn else "🛡️ Doctor action")
+        st.caption("Эмч нэг тоглогчийг хамгаална." if mn else "Choose one player to protect.")
+        _render_doctor_plant_context(lang, round_number)
         heal_choices = {p["name"]: p["id"] for p in alive}
         with st.form(f"doctor_night_{round_number}"):
             selected_heal = st.selectbox("Хэнийг эмчлэх вэ?" if mn else "Who do you protect?", list(heal_choices))
