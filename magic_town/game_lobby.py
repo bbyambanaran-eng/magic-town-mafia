@@ -98,18 +98,19 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
             .execute()
             .data
         )
+        contestants = [p for p in players if not p.get("is_host")]
 
         st.write("Өрөөний код" if mn else "Room code")
         st.code(room["code"])
         _render_real_world_context(lang)
         st.write(
             f"{'Тоглогчид' if mn else 'Players'}: "
-            f"{len(players)} / {ROOM_CAPACITY}"
+            f"{len(contestants)} / {ROOM_CAPACITY}"
         )
 
         for player in players:
-            host_label = " (host)" if player.get("is_host") else ""
-            st.write(f"• {player['name']}{host_label}")
+            host_label = " (Хотын дарга)" if mn else " (Mayor / host)"
+            st.write(f"• {player['name']}{host_label if player.get('is_host') else ''}")
 
             # Тоглогч зөвхөн өөрийнхөө дүрийг харна.
             if player["id"] == player_id and player.get("role"):
@@ -139,31 +140,36 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
                     "🎮 Тоглоом эхлүүлэх" if mn else "🎮 Start game",
                     key="start_mafia_game",
                 ):
-                    if len(players) < 2:
+                    if len(contestants) < 2:
                         st.warning(
                             "Эхлэхэд дор хаяж 2 тоглогч хэрэгтэй."
                             if mn
                             else "At least 2 players are needed to start."
                         )
                     else:
-                        shuffled = [player["id"] for player in players]
+                        shuffled = [player["id"] for player in contestants]
                         random.shuffle(shuffled)
-                        assigned = {player_id: "citizen" for player_id in shuffled}
-                        mafia_count = max(1, len(players) // 6)
+                        assigned = {participant_id: "citizen" for participant_id in shuffled}
+                        mafia_count = max(1, len(contestants) // 6)
                         cursor = 0
                         for player_id_to_assign in shuffled[:mafia_count]:
                             assigned[player_id_to_assign] = "mafia"
                         cursor += mafia_count
-                        if len(players) >= 3:
+                        if len(contestants) >= 3:
                             assigned[shuffled[cursor]] = "doctor"
                             cursor += 1
-                        if len(players) >= 5:
+                        if len(contestants) >= 5:
                             assigned[shuffled[cursor]] = "detective"
 
-                        for player in players:
+                        for player in contestants:
                             db.table("game_players").update({
                                 "role": assigned[player["id"]]
                             }).eq("id", player["id"]).execute()
+                        for host in players:
+                            if host.get("is_host"):
+                                db.table("game_players").update({"role": None}).eq(
+                                    "id", host["id"]
+                                ).execute()
 
                         db.table("game_rooms").update({
                             "phase": "night", "round_number": 1
@@ -186,6 +192,11 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
                 db, room_id, player_id, players,
                 int(room.get("round_number", 1)), is_host, lang,
             )
+            if is_host:
+                _render_mayor_night_report(
+                    db, room_id, players,
+                    int(room.get("round_number", 1)), lang,
+                )
             _render_detective_action(
                 db, room_id, player_id, players,
                 int(room.get("round_number", 1)), lang,
@@ -206,6 +217,11 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
                 st.success("Мафийн тал яллаа!" if winner == "mafia" else "Иргэд яллаа!")
             else:
                 st.success("The Mafia wins!" if winner == "mafia" else "The citizens win!")
+            if is_host:
+                _render_mayor_night_report(
+                    db, room_id, players,
+                    int(room.get("round_number", 1)), lang,
+                )
         else:
             st.info(
                 f"Тоглоомын үе: {phase}"
@@ -292,80 +308,65 @@ def _render_day_chat_and_vote(
     st.subheader("🗳️ Өдрийн санал" if mn else "🗳️ Day vote")
 
     alive_players = [
-        player for player in players if player.get("is_alive", True)
+        player for player in players
+        if player.get("is_alive", True) and not player.get("is_host")
     ]
     targets = [
         player for player in alive_players if player["id"] != player_id
     ]
 
-    if not current_player or not current_player.get("is_alive", True):
+    can_vote = bool(
+        current_player
+        and current_player.get("is_alive", True)
+        and not current_player.get("is_host")
+    )
+    if not can_vote:
         st.info(
-            "Та санал өгөх боломжгүй."
-            if mn
+            "Хотын дарга санал өгөхгүй." if mn and is_host
+            else "The Mayor does not vote." if is_host
+            else "Та санал өгөх боломжгүй." if mn
             else "You cannot vote."
         )
-        return
-
-    if not targets:
+    elif not targets:
         st.info(
-            "Санал өгөх өөр тоглогч алга."
-            if mn
+            "Санал өгөх өөр тоглогч алга." if mn
             else "There are no other players to vote for."
         )
-        return
+    else:
+        target_names = {player["name"]: player["id"] for player in targets}
 
-    target_names = {player["name"]: player["id"] for player in targets}
-
-    with st.form("mafia_vote_form"):
-        selected_name = st.selectbox(
-            "Хэнийг саналд нэр дэвшүүлэх вэ?"
-            if mn
-            else "Who do you vote for?",
-            list(target_names.keys()),
-        )
-        submit_vote = st.form_submit_button(
-            "Санал өгөх" if mn else "Submit vote"
-        )
-
-    if submit_vote:
-        try:
-            existing = (
-                db.table("game_votes")
-                .select("id")
-                .eq("room_id", room_id)
-                .eq("round_number", round_number)
-                .eq("phase", "day")
-                .eq("voter_id", player_id)
-                .limit(1)
-                .execute()
-                .data
+        with st.form("mafia_vote_form"):
+            selected_name = st.selectbox(
+                "Хэнийг саналд нэр дэвшүүлэх вэ?" if mn else "Who do you vote for?",
+                list(target_names.keys()),
             )
+            submit_vote = st.form_submit_button("Санал өгөх" if mn else "Submit vote")
 
-            vote_data = {
-                "room_id": room_id,
-                "round_number": round_number,
-                "phase": "day",
-                "voter_id": player_id,
-                "target_id": target_names[selected_name],
-            }
-
-            if existing:
-                (
-                    db.table("game_votes")
-                    .update({"target_id": target_names[selected_name]})
-                    .eq("id", existing[0]["id"])
-                    .execute()
+        if submit_vote:
+            try:
+                existing = (
+                    db.table("game_votes").select("id")
+                    .eq("room_id", room_id).eq("round_number", round_number)
+                    .eq("phase", "day").eq("voter_id", player_id)
+                    .limit(1).execute().data
                 )
-            else:
-                db.table("game_votes").insert(vote_data).execute()
-
-            st.success("Санал хадгалагдлаа." if mn else "Vote saved.")
-            st.rerun()
-
-        except Exception as exc:
-            st.error("Санал хадгалж чадсангүй." if mn else "Could not save vote.")
-            with st.expander("Техник мэдээлэл" if mn else "Technical details"):
-                st.code(f"{type(exc).__name__}: {exc}")
+                vote_data = {
+                    "room_id": room_id, "round_number": round_number,
+                    "phase": "day", "voter_id": player_id,
+                    "target_id": target_names[selected_name],
+                }
+                if existing:
+                    db.table("game_votes").update({
+                        "target_id": target_names[selected_name]
+                    }).eq("id", existing[0]["id"]).execute()
+                else:
+                    db.table("game_votes").insert(vote_data).execute()
+                st.success("Санал хадгалагдлаа." if mn else "Vote saved.")
+                st.rerun()
+            except Exception as exc:
+                st.error("Санал хадгалж чадсангүй." if mn else "Could not save vote.")
+                with st.expander("Техник мэдээлэл" if mn else "Technical details"):
+                    st.code(f"{type(exc).__name__}: {exc}")
 
     try:
         votes = (
@@ -416,14 +417,13 @@ def _render_day_chat_and_vote(
 
 
 def _game_winner(players: list[dict]) -> str | None:
-    alive = [p for p in players if p.get("is_alive", True)]
+    alive = [p for p in players if p.get("is_alive", True) and not p.get("is_host")]
     mafia = sum(1 for p in alive if p.get("role") == "mafia")
     town = sum(1 for p in alive if p.get("role") in {"citizen", "doctor", "detective"})
     if mafia == 0:
         return "citizens"
     if mafia >= town:
         return "mafia"
-    return None
     return None
 
 
@@ -551,7 +551,7 @@ def _render_detective_action(db, room_id: str, player_id: str,
 def _render_night(db, room_id: str, player_id: str, players: list[dict],
                   round_number: int, is_host: bool, lang: str) -> None:
     mn = lang == "mn"
-    alive = [p for p in players if p.get("is_alive", True)]
+    alive = [p for p in players if p.get("is_alive", True) and not p.get("is_host")]
     mafia = [p for p in alive if p.get("role") == "mafia"]
     doctors = [p for p in alive if p.get("role") == "doctor"]
     targets = [p for p in alive if p.get("role") != "mafia"]
@@ -604,7 +604,7 @@ def _render_night(db, room_id: str, player_id: str, players: list[dict],
                 with st.expander("Техник мэдээлэл" if mn else "Technical details"):
                     st.code(f"{type(exc).__name__}: {exc}")
 
-    if me and me.get("is_alive", True) and me.get("role") not in ("mafia", "doctor"):
+    if me and me.get("is_alive", True) and not me.get("is_host") and me.get("role") not in ("mafia", "doctor"):
         st.info("Шөнө болж байна. Мафийн үйлдлийг хүлээнэ үү." if mn else "It is night. Wait for the Mafia action.")
     elif me and not me.get("is_alive", True):
         st.info("Та хасагдсан. Шөнийн үр дүнг хүлээнэ үү." if mn else "You are eliminated. Wait for the night result.")
@@ -619,6 +619,24 @@ def _render_night(db, room_id: str, player_id: str, players: list[dict],
         mafia_votes = [v for v in actions if v["voter_id"] in mafia_ids and v["target_id"] in target_ids]
         doctor_votes = [v for v in actions if v["voter_id"] in doctor_ids]
         if is_host:
+            if mafia_votes or doctor_votes:
+                with st.expander("Хотын даргын нууц самбар" if mn else "Mayor's private control panel"):
+                    player_names = {p["id"]: p["name"] for p in players}
+                    mafia_tally = {}
+                    for vote in mafia_votes:
+                        mafia_tally[vote["target_id"]] = mafia_tally.get(vote["target_id"], 0) + 1
+                    highest = max(mafia_tally.values(), default=0)
+                    leaders = [pid for pid, count in mafia_tally.items() if count == highest]
+                    mafia_target = leaders[0] if highest and len(leaders) == 1 else None
+                    doctor_targets = {v["target_id"] for v in doctor_votes}
+                    if mafia_target:
+                        st.write(("Мафийн онилсон хүн: " if mn else "Mafia target: ") + player_names.get(mafia_target, "—"))
+                    elif mafia_tally:
+                        st.info("Мафийн санал тэнцсэн байна." if mn else "The Mafia vote is tied.")
+                    for target_id in sorted(doctor_targets):
+                        st.write(("Эмчийн хамгаалсан хүн: " if mn else "Doctor protected: ") + player_names.get(target_id, "—"))
+                    if mafia_target and mafia_target in doctor_targets:
+                        st.success("Эмч мафийн онилсон хүнийг аварна." if mn else "The Doctor protects the Mafia's target.")
             ready = len(mafia_votes) >= len(mafia) and len(doctor_votes) >= len(doctors)
             if not ready:
                 st.caption("Мафийнхан болон амьд эмч сонголтоо хийсний дараа шөнийг дуусгана." if mn else "Wait for the living Mafia and Doctor to submit their actions.")
@@ -654,6 +672,20 @@ def _resolve_night(db, room_id: str, round_number: int, mafia_votes: list[dict],
         updates["round_number"] = round_number + 1
     db.table("game_rooms").update(updates).eq("id", room_id).execute()
 
+    host = next((p for p in players if p.get("is_host")), None)
+    if host:
+        public_text = (
+            (f"🌅 Өглөө боллоо. {next((p['name'] for p in players if p['id'] == eliminated), 'Тоглогч')} шөнө нас барлаа." if eliminated else "🌅 Өглөө боллоо. Энэ шөнө хүн нас барсангүй.")
+            if mn else
+            (f"🌅 Morning. {next((p['name'] for p in players if p['id'] == eliminated), 'A player')} died overnight." if eliminated else "🌅 Morning. Nobody died overnight.")
+        )
+        try:
+            db.table("game_messages").insert({
+                "room_id": room_id, "player_id": host["id"], "body": public_text,
+            }).execute()
+        except Exception:
+            pass
+
     if eliminated:
         name = next((p["name"] for p in players if p["id"] == eliminated), "Player")
         text = f"Шөнө {name} хасагдлаа." if mn else f"{name} was eliminated at night."
@@ -664,6 +696,47 @@ def _resolve_night(db, room_id: str, round_number: int, mafia_votes: list[dict],
         st.info("Шөнийн санал тэнцлээ. Хэн ч хасагдсангүй. Өдөр эхэллээ." if mn else "The Mafia vote tied. Nobody was eliminated. Day begins.")
     st.rerun()
 
+
+
+def _render_mayor_night_report(db, room_id: str, players: list[dict],
+                               round_number: int, lang: str) -> None:
+    mn = lang == "mn"
+    try:
+        actions = []
+        for candidate_round in (round_number, round_number - 1):
+            if candidate_round < 1:
+                continue
+            actions = (db.table("game_votes").select("voter_id, target_id")
+                .eq("room_id", room_id).eq("round_number", candidate_round)
+                .eq("phase", "night").execute().data)
+            if actions:
+                break
+        if not actions:
+            return
+        names = {p["id"]: p["name"] for p in players}
+        mafia_ids = {p["id"] for p in players if p.get("role") == "mafia" and not p.get("is_host")}
+        doctor_ids = {p["id"] for p in players if p.get("role") == "doctor" and not p.get("is_host")}
+        mafia_tally = {}
+        for vote in actions:
+            if vote["voter_id"] in mafia_ids:
+                mafia_tally[vote["target_id"]] = mafia_tally.get(vote["target_id"], 0) + 1
+        highest = max(mafia_tally.values(), default=0)
+        leaders = [pid for pid, count in mafia_tally.items() if count == highest]
+        mafia_target = leaders[0] if highest and len(leaders) == 1 else None
+        doctor_targets = {v["target_id"] for v in actions if v["voter_id"] in doctor_ids}
+        with st.expander("Хотын даргын нууц тайлан" if mn else "Mayor's private night report"):
+            if mafia_target:
+                st.write(("Мафийн онилсон хүн: " if mn else "Mafia target: ") + names.get(mafia_target, "—"))
+            elif mafia_tally:
+                st.info("Мафийн санал тэнцсэн." if mn else "The Mafia vote was tied.")
+            for target_id in sorted(doctor_targets):
+                st.write(("Эмчийн хамгаалсан хүн: " if mn else "Doctor protected: ") + names.get(target_id, "—"))
+            if mafia_target and mafia_target in doctor_targets:
+                st.success("Эмч мафийн онилсон хүнийг аварсан." if mn else "The Doctor saved the Mafia's target.")
+            elif mafia_target:
+                st.info("Эмч мафийн онилсон хүнийг хамгаалаагүй." if mn else "The Doctor did not protect the Mafia's target.")
+    except Exception as exc:
+        st.caption(("Нууц тайлан ачаалж чадсангүй: " if mn else "Could not load private report: ") + str(exc))
 
 def _render_create_join(db, lang: str) -> None:
     mn = lang == "mn"
@@ -762,13 +835,14 @@ def _render_create_join(db, lang: str) -> None:
 
             players = (
                 db.table("game_players")
-                .select("id")
+                .select("id, is_host")
                 .eq("room_id", room["id"])
                 .execute()
                 .data
             )
 
-            if len(players) >= ROOM_CAPACITY:
+            participant_count = sum(1 for p in players if not p.get("is_host"))
+            if participant_count >= ROOM_CAPACITY:
                 st.error(
                     "Өрөө дүүрсэн байна (12 тоглогч)."
                     if mn
