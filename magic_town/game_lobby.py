@@ -165,40 +165,72 @@ def _apply_weather_theme(
         @keyframes magic-wind { from { transform: translateX(-7vw); } to { transform: translateX(7vw); } }
     """ if is_windy else ""
 
-    day_text_theme = """
+    game_ui_theme = """
         [data-testid="stMain"],
         [data-testid="stMain"] *:not(svg):not(path) {
-            color: #263746 !important;
+            color: #f1ead7 !important;
         }
-        [data-testid="stMain"] a { color: #244f70 !important; }
+        [data-testid="stMain"] h1,
+        [data-testid="stMain"] h2,
+        [data-testid="stMain"] h3 {
+            color: #f0cd75 !important;
+        }
+        [data-testid="stMain"] a { color: #9ccaff !important; }
+        [data-testid="stMain"] [data-testid="stMetric"] {
+            background: linear-gradient(145deg, rgba(23,36,58,.97), rgba(14,24,41,.98)) !important;
+            border: 1px solid rgba(226,190,103,.72) !important;
+            border-radius: 12px !important;
+            padding: .65rem .8rem !important;
+        }
+        [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
+            background: rgba(15,25,42,.90) !important;
+            border-color: rgba(226,190,103,.52) !important;
+            border-radius: 14px !important;
+        }
         [data-testid="stMain"] input:not([type="checkbox"]),
         [data-testid="stMain"] textarea,
         [data-testid="stMain"] [data-baseweb="select"] > div {
-            color: #263746 !important;
-            background-color: rgba(248,250,251,.96) !important;
-            border-color: #718591 !important;
+            color: #f3ecd9 !important;
+            background-color: #17243a !important;
+            border-color: #9c824a !important;
         }
         [data-testid="stMain"] input::placeholder,
         [data-testid="stMain"] textarea::placeholder {
-            color: #5c6c76 !important;
+            color: #c3baa5 !important;
             opacity: 1 !important;
         }
         [data-testid="stMain"] button,
         [data-testid="stMain"] [role="button"] {
-            color: #263746 !important;
-            border-color: #657887 !important;
-            background-color: rgba(248,250,251,.96) !important;
+            color: #1c2636 !important;
+            border: 1px solid #f0d58f !important;
+            background: linear-gradient(180deg, #f0d58f, #c59a46) !important;
+            font-weight: 650 !important;
         }
-    """ if is_daylight else ""
+        [data-testid="stMain"] button:hover,
+        [data-testid="stMain"] [role="button"]:hover {
+            border-color: #fff0bd !important;
+            background: linear-gradient(180deg, #ffe7a5, #d5ad5d) !important;
+        }
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #101b2c, #111827) !important;
+            border-right: 1px solid rgba(226,190,103,.42) !important;
+        }
+    """
+
+    navy_overlay = (
+        "linear-gradient(180deg, rgba(12,21,37,.48), rgba(12,20,35,.66))"
+        if is_daylight else
+        "linear-gradient(180deg, rgba(8,15,29,.62), rgba(8,14,26,.76))"
+    )
 
     st.markdown(
         f"""
         <style>
-        [data-testid="stAppViewContainer"] {{ background: {celestial}, {clouds} {sky}; background-attachment: fixed; }}
+        [data-testid="stAppViewContainer"] {{ background: {celestial}, {clouds} {navy_overlay}, {sky}; background-attachment: fixed; }}
         [data-testid="stMain"] {{ position: relative; z-index: 1; background: transparent; }}
         [data-testid="stHeader"] {{ background: transparent; }}
         [data-testid="stSidebar"] {{ position: relative; z-index: 2; background-color: rgba(15, 18, 25, .82); }}
-        {day_text_theme}
+        {game_ui_theme}
         {weather_layer}
         {wind_layer}
         </style>
