@@ -336,6 +336,14 @@ def _record_public_event(db, room_id: str, players: list[dict], body: str) -> No
         pass
 
 
+def _clear_room_chat(db, room_id: str) -> None:
+    """Keep chat scoped to the current game phase."""
+    try:
+        db.table("game_messages").delete().eq("room_id", room_id).execute()
+    except Exception:
+        pass
+
+
 def _render_latest_public_event(db, room_id: str, players: list[dict]) -> None:
     host_ids = {p["id"] for p in players if p.get("is_host")}
     if not host_ids:
@@ -615,6 +623,7 @@ def _resolve_day_vote(
             if mn else
             f"📊 Day vote results — {tally_text}. The vote was tied; nobody was eliminated. Night begins."
         )
+    _clear_room_chat(db, room_id)
     _record_public_event(db, room_id, players, event)
 
     if eliminated:
@@ -853,6 +862,7 @@ def _resolve_night(db, room_id: str, round_number: int, mafia_votes: list[dict],
             if mn else
             "🌅 Morning. The Mafia vote was tied, so nobody died."
         )
+    _clear_room_chat(db, room_id)
     _record_public_event(db, room_id, players, public_text)
 
     if eliminated:
