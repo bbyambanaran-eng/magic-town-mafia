@@ -48,6 +48,7 @@ def _render_real_world_context(lang: str) -> None:
         )
 
 
+@st.fragment(run_every="3s")
 def render_game_lobby(lang: str) -> None:
     mn = lang == "mn"
     st.subheader("🎭 Mafia тоглоом" if mn else "🎭 Mafia game")
@@ -291,7 +292,13 @@ def _render_day_chat_and_vote(
             .execute()
             .data
         )
-        player_names = {player["id"]: player["name"] for player in players}
+        player_names = {
+            player["id"]: (
+                ("Хотын дарга" if mn else "Mayor")
+                if player.get("is_host") else player["name"]
+            )
+            for player in players
+        }
 
         if messages:
             for item in messages:
@@ -523,6 +530,22 @@ def _render_detective_action(db, room_id: str, player_id: str,
     alive = [p for p in players if p.get("is_alive", True) and p["id"] != player_id]
     if not alive:
         return
+    actions = (db.table("game_votes").select("target_id")
+        .eq("room_id", room_id).eq("round_number", round_number)
+        .eq("phase", "night").eq("voter_id", player_id)
+        .limit(1).execute().data)
+    if actions:
+        target = next((p for p in players if p["id"] == actions[0]["target_id"]), None)
+        if target:
+            is_mafia = target.get("role") == "mafia"
+            result = ("Мафийн тал" if is_mafia else "Мафийн тал биш") if mn else ("Mafia" if is_mafia else "Not Mafia")
+            st.success(f"{target['name']}: {result}")
+        st.caption(
+            "Энэ раундад шалгах эрхээ ашигласан. Өдрийн чатаар бусдыг ятгаж болно."
+            if mn else "You used this round's investigation. Use day chat to persuade the others."
+        )
+        return
+
     choices = {p["name"]: p["id"] for p in alive}
     with st.form(f"detective_{round_number}"):
         selected = st.selectbox("Хэнийг шалгах вэ?" if mn else "Who do you investigate?", list(choices))
@@ -535,17 +558,6 @@ def _render_detective_action(db, room_id: str, player_id: str,
             st.error("Шалгалтыг хадгалж чадсангүй." if mn else "Could not save investigation.")
             with st.expander("Техник мэдээлэл" if mn else "Technical details"):
                 st.code(f"{type(exc).__name__}: {exc}")
-
-    actions = (db.table("game_votes").select("target_id")
-        .eq("room_id", room_id).eq("round_number", round_number)
-        .eq("phase", "night").eq("voter_id", player_id)
-        .limit(1).execute().data)
-    if actions:
-        target = next((p for p in players if p["id"] == actions[0]["target_id"]), None)
-        if target:
-            is_mafia = target.get("role") == "mafia"
-            result = ("Мафийн тал" if is_mafia else "Мафийн тал биш") if mn else ("Mafia" if is_mafia else "Not Mafia")
-            st.success(f"{target['name']}: {result}")
 
 
 def _render_night(db, room_id: str, player_id: str, players: list[dict],
