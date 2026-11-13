@@ -133,8 +133,8 @@ def _apply_weather_theme(
         weather_layer = """
             [data-testid="stAppViewContainer"]::before {
                 content: ""; position: fixed; inset: -20vh 0 0; pointer-events: none; z-index: 0;
-                background-image: radial-gradient(2px 2px at 12% 8%, #fff 98%, transparent), radial-gradient(3px 3px at 31% 26%, #fff 98%, transparent), radial-gradient(2px 2px at 53% 12%, #fff 98%, transparent), radial-gradient(3px 3px at 74% 32%, #fff 98%, transparent), radial-gradient(2px 2px at 91% 17%, #fff 98%, transparent), radial-gradient(2px 2px at 44% 49%, #fff 98%, transparent);
-                background-size: 260px 320px; opacity: .68; animation: magic-snow 12s linear infinite;
+                background-image: radial-gradient(2px 2px at 18% 16%, #fff 98%, transparent), radial-gradient(2px 2px at 58% 38%, #fff 98%, transparent), radial-gradient(2px 2px at 86% 24%, #fff 98%, transparent);
+                background-size: 460px 560px; opacity: .24; animation: magic-snow 20s linear infinite;
             }
             @keyframes magic-snow { from { transform: translateY(-8vh); } to { transform: translateY(24vh); } }
         """
@@ -165,6 +165,19 @@ def _apply_weather_theme(
         @keyframes magic-wind { from { transform: translateX(-7vw); } to { transform: translateX(7vw); } }
     """ if is_windy else ""
 
+    day_text_theme = """
+        [data-testid="stMain"],
+        [data-testid="stMain"] *:not(svg):not(path) {
+            color: #17251d !important;
+        }
+        [data-testid="stMain"] a { color: #123e68 !important; }
+        [data-testid="stMain"] .stButton > button {
+            color: #17251d !important;
+            border-color: #465b4c !important;
+            background-color: rgba(255,255,255,.72) !important;
+        }
+    """ if is_daylight else ""
+
     st.markdown(
         f"""
         <style>
@@ -172,8 +185,50 @@ def _apply_weather_theme(
         [data-testid="stMain"] {{ position: relative; z-index: 1; background: transparent; }}
         [data-testid="stHeader"] {{ background: transparent; }}
         [data-testid="stSidebar"] {{ position: relative; z-index: 2; background-color: rgba(15, 18, 25, .82); }}
+        {day_text_theme}
         {weather_layer}
         {wind_layer}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _apply_doctor_plant_theme() -> None:
+    """Give only the Doctor's own session a calm, botanical game backdrop."""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(ellipse at 12% 18%, #83a96d33 0 9%, transparent 25%),
+                radial-gradient(ellipse at 86% 75%, #5c8c5b33 0 12%, transparent 30%),
+                linear-gradient(145deg, #10271d 0%, #1c3827 48%, #0e241b 100%) !important;
+            background-attachment: fixed !important;
+        }
+        [data-testid="stAppViewContainer"]::before,
+        [data-testid="stAppViewContainer"]::after {
+            content: none !important;
+            background: none !important;
+            animation: none !important;
+        }
+        [data-testid="stMain"] p,
+        [data-testid="stMain"] li,
+        [data-testid="stMain"] label,
+        [data-testid="stMain"] h1,
+        [data-testid="stMain"] h2,
+        [data-testid="stMain"] h3,
+        [data-testid="stMain"] [data-testid="stMarkdownContainer"],
+        [data-testid="stMain"] [data-testid="stCaptionContainer"],
+        [data-testid="stMain"] [data-testid="stMetricLabel"],
+        [data-testid="stMain"] [data-testid="stMetricValue"] {
+            color: #e1f0e3 !important;
+        }
+        [data-testid="stMain"] .stButton > button {
+            color: #e1f0e3 !important;
+            border-color: #93b59b !important;
+            background-color: rgba(11,32,22,.8) !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -329,6 +384,8 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
             (player for player in players if player["id"] == player_id),
             None,
         )
+        if current_player and current_player.get("role") == "doctor":
+            _apply_doctor_plant_theme()
         is_host = bool(current_player and current_player.get("is_host"))
 
         if (

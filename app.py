@@ -28,14 +28,17 @@ RETRY_SECONDS = 60
 
 
 def main() -> None:
-    st.set_page_config(page_title="Magic Town", layout="wide")
+    st.set_page_config(
+        page_title="Magic Town",
+        layout="wide",
+        initial_sidebar_state="collapsed",
+    )
     lang, force = _sidebar()
-    _header(lang)
     render_game_lobby(lang)
 
     # Keep the assignment's charts and source notes available without separate
     # top-level tabs; the game remains the only primary screen.
-    with st.expander("📊 Дата анализ ба эх сурвалж" if lang == "mn" else "📊 Data analysis and sources"):
+    with st.expander("📊 Судалгаа" if lang == "mn" else "📊 Data analysis"):
         _render_analysis(lang, force)
 
 def _sidebar() -> tuple[str, bool]:
@@ -43,7 +46,7 @@ def _sidebar() -> tuple[str, bool]:
         st.session_state["lang"] = "mn"
 
     with st.sidebar:
-        st.header("Magic Town")
+        st.header("⚙️ Тохиргоо" if st.session_state["lang"] == "mn" else "⚙️ Settings")
         choice = st.radio(
             tr(st.session_state["lang"], "language"),
             options=["mn", "en"],
@@ -51,9 +54,7 @@ def _sidebar() -> tuple[str, bool]:
             key="lang",
         )
         lang = choice if choice in ("mn", "en") else "mn"
-        st.write(tr(lang, "about"))
         force = st.button(tr(lang, "refresh"), width="stretch")
-        st.caption(tr(lang, "next_step"))
 
     return lang, force
 
