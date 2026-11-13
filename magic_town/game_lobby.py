@@ -2,7 +2,9 @@ import secrets
 import string
 import random
 import html
+import base64
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -12,6 +14,64 @@ from .plants import fetch_plants
 from .weather import fetch_weather, weather_label
 
 ROOM_CAPACITY = 12
+ASSET_DIR = Path(__file__).parent / "assets"
+
+
+@st.cache_data
+def _brand_asset(filename: str) -> str:
+    return base64.b64encode((ASSET_DIR / filename).read_bytes()).decode("ascii")
+
+
+def _render_brand_banner(lang: str) -> None:
+    mn = lang == "mn"
+    local_now = datetime.now(ZoneInfo("Asia/Ulaanbaatar"))
+    day = 6 <= local_now.hour < 19
+    phase = ("☀️ Өдөр" if day else "🌙 Шөнө") if mn else ("☀️ Day" if day else "🌙 Night")
+    logo = _brand_asset("aum_shield.png")
+    skyline = _brand_asset("ulaanbaatar_skyline.svg")
+    st.markdown(
+        f"""
+        <style>
+        .magic-town-hero {{
+            position: relative; isolation: isolate; overflow: hidden;
+            min-height: 166px; margin: 0 0 1rem; padding: 1.1rem 1.4rem;
+            display: grid; grid-template-columns: 1fr 142px 1fr; align-items: center;
+            border: 1px solid rgba(225,190,103,.42); border-radius: 18px;
+            background: linear-gradient(110deg,rgba(7,16,31,.97),rgba(17,31,52,.79) 52%,rgba(7,16,31,.96));
+            box-shadow: 0 14px 38px rgba(0,0,0,.2);
+        }}
+        .magic-town-hero .magic-skyline {{
+            position: absolute; inset: auto 0 0; width: 100%; height: 158px;
+            object-fit: cover; object-position: center bottom; opacity: .88; z-index: -1;
+        }}
+        .magic-town-brand {{ color:#f0d182 !important; font-size:clamp(1.15rem,2.1vw,1.65rem); font-weight:750; text-shadow:0 2px 14px #000; }}
+        .magic-town-kicker {{ margin-top:.4rem; color:#e4eaf1 !important; font-size:.93rem; text-shadow:0 2px 10px #000; }}
+        .magic-town-emblem {{
+            width:112px; height:112px; margin:auto; padding:8px; box-sizing:border-box;
+            border-radius:50%; background:radial-gradient(circle,#fff9df 0 48%,#d9b65e 52%,#80652c 66%,transparent 71%);
+            box-shadow:0 0 28px #e8c55e66; display:flex; align-items:center; justify-content:center;
+        }}
+        .magic-town-emblem img {{ width:72px; height:86px; object-fit:contain; border-radius:10px; box-shadow:0 0 0 2px #e4c369; }}
+        .magic-town-phase {{ justify-self:end; padding:.55rem .9rem; border:1px solid #d9b65e88; border-radius:999px; color:#f5d98e !important; background:#111d31dd; font-weight:700; box-shadow:0 0 18px #d4ad4b33; }}
+        @media (max-width:620px) {{
+            .magic-town-hero {{ min-height:132px; grid-template-columns:1fr 78px; padding:.85rem; }}
+            .magic-town-emblem {{ grid-column:2; grid-row:1; width:72px; height:72px; }}
+            .magic-town-emblem img {{ width:48px; height:58px; }}
+            .magic-town-phase {{ grid-column:1 / -1; justify-self:start; margin-top:.55rem; }}
+        }}
+        </style>
+        <section class="magic-town-hero">
+            <img class="magic-skyline" src="data:image/svg+xml;base64,{skyline}" alt="Ulaanbaatar skyline at night" />
+            <div>
+                <div class="magic-town-brand">🌆 Magic Town Mafia</div>
+                <div class="magic-town-kicker">{"Улаанбаатарын бодит цаг агаар" if mn else "Live Ulaanbaatar weather"}</div>
+            </div>
+            <div class="magic-town-emblem"><img src="data:image/png;base64,{logo}" alt="American University of Mongolia shield" /></div>
+            <div class="magic-town-phase">{phase}</div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -30,10 +90,6 @@ def _render_real_world_context(lang: str, game_phase: str) -> None:
     local_zone = ZoneInfo("Asia/Ulaanbaatar")
     now_local = datetime.now(local_zone).replace(tzinfo=None)
     today_key = now_local.date().isoformat()
-    st.markdown(
-        "### 🌦️ Улаанбаатарын бодит цаг агаар"
-        if mn else "### 🌦️ Live Ulaanbaatar weather"
-    )
     try:
         record = _game_weather(today_key)
         payload = record["payload"]
@@ -338,7 +394,7 @@ def _render_doctor_plant_context(lang: str, round_number: int) -> None:
 @st.fragment(run_every="3s")
 def render_game_lobby(lang: str) -> None:
     mn = lang == "mn"
-    st.subheader("🎭 Magic Town Mafia")
+    _render_brand_banner(lang)
 
     try:
         db = get_supabase_client()
