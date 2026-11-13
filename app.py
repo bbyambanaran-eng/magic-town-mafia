@@ -1,4 +1,4 @@
-"""Magic Town data screen.
+"""Magic Town data screen and Mafia game lobby.
 
 Run from the repository root:
 
@@ -13,9 +13,15 @@ import streamlit as st
 
 from magic_town.analysis import load_historical_weather, load_plant_occurrences
 from magic_town.cache_store import LoadResult, load_live
+from magic_town.game_lobby import render_game_lobby
 from magic_town.i18n import error_text, tr
 from magic_town.plants import basis_label, fetch_plants, validate_plants_payload
-from magic_town.weather import compass_point, fetch_weather, validate_weather_payload, weather_label
+from magic_town.weather import (
+    compass_point,
+    fetch_weather,
+    validate_weather_payload,
+    weather_label,
+)
 
 TTL_SECONDS = 600
 RETRY_SECONDS = 60
@@ -26,11 +32,12 @@ def main() -> None:
     lang, force = _sidebar()
     _header(lang)
 
-    weather_tab, plants_tab, analysis_tab = st.tabs(
+    weather_tab, plants_tab, analysis_tab, mafia_tab = st.tabs(
         [
             tr(lang, "tab_weather"),
             tr(lang, "tab_plants"),
             "Дата анализ" if lang == "mn" else "Data analysis",
+            "🎭 Mafia",
         ]
     )
 
@@ -54,6 +61,9 @@ def main() -> None:
 
     with analysis_tab:
         _render_analysis(lang, force)
+
+    with mafia_tab:
+        render_game_lobby(lang)
 
 
 def _sidebar() -> tuple[str, bool]:
