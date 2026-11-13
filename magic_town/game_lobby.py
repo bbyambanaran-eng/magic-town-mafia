@@ -143,6 +143,43 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
         )
         is_host = bool(current_player and current_player.get("is_host"))
 
+        if (
+            phase in {"day", "night"}
+            and current_player
+            and not is_host
+            and current_player.get("is_alive", True)
+        ):
+            if st.button(
+                "Тоглоомоос гарах" if mn else "Leave game",
+                key=f"leave_mafia_game_{player_id}",
+            ):
+                try:
+                    db.table("game_players").update({"is_alive": False}).eq(
+                        "id", player_id
+                    ).execute()
+                    after_leave = [
+                        {**p, "is_alive": False} if p["id"] == player_id else p
+                        for p in players
+                    ]
+                    winner = _game_winner(after_leave)
+                    if winner:
+                        db.table("game_rooms").update({"phase": "finished"}).eq(
+                            "id", room_id
+                        ).execute()
+                    leave_event = (
+                        f"📣 {current_player['name']} тоглоомоос гарлаа. "
+                        f"{'Иргэд яллаа!' if winner == 'citizens' else 'Мафийн тал яллаа!' if winner == 'mafia' else 'Үлдсэн тоглогчид үргэлжлүүлнэ.'}"
+                        if mn else
+                        f"📣 {current_player['name']} left the game. "
+                        f"{'The citizens win!' if winner == 'citizens' else 'The Mafia wins!' if winner == 'mafia' else 'The remaining players continue.'}"
+                    )
+                    _record_public_event(db, room_id, players, leave_event)
+                    st.rerun()
+                except Exception as exc:
+                    st.error("Тоглоомоос гаргаж чадсангүй." if mn else "Could not leave the game.")
+                    with st.expander("Техник мэдээлэл" if mn else "Technical details"):
+                        st.code(f"{type(exc).__name__}: {exc}")
+
         if phase != "lobby":
             _render_latest_public_event(db, room_id, players)
 
@@ -436,6 +473,12 @@ def _render_day_chat_and_vote(
             .execute()
             .data
         )
+        alive_ids = {player["id"] for player in alive_players}
+        votes = [
+            vote for vote in votes
+            if vote.get("voter_id") in alive_ids
+            and vote.get("target_id") in alive_ids
+        ]
 
         tally = {}
         for vote in votes:
