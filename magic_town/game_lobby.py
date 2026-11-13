@@ -102,7 +102,7 @@ def render_game_lobby(lang: str) -> None:
                     .insert({
                         "room_id": room["id"],
                         "name": host_name,
-                        "role": "pending",
+                        "role": None,
                         "is_alive": True,
                         "is_host": True,
                     })
@@ -173,7 +173,7 @@ def render_game_lobby(lang: str) -> None:
                 .insert({
                     "room_id": room["id"],
                     "name": player_name,
-                    "role": "pending",
+                    "role": None,
                     "is_alive": True,
                     "is_host": False,
                 })
