@@ -414,7 +414,7 @@ def _resolve_day_vote(
         {**p, "is_alive": False} if p["id"] == eliminated else p
         for p in players
     ]
-    winner = _game_winner(after)
+    winner = _game_winner(after) if eliminated else None
     db.table("game_rooms").update({
         "phase": "finished" if winner else "night"
     }).eq("id", room_id).execute()
