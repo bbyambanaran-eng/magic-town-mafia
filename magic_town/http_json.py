@@ -19,7 +19,7 @@ def get_json(url: str, params: dict) -> tuple[dict, str]:
                 "Accept": "application/json",
                 "User-Agent": USER_AGENT,
             },
-            timeout=(5, 25),
+            timeout=(15, 30),
         )
     except requests.Timeout as exc:
         raise FetchError("timeout", str(exc)) from exc
