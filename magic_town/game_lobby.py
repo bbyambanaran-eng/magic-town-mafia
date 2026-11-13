@@ -133,8 +133,8 @@ def _apply_weather_theme(
         weather_layer = """
             [data-testid="stAppViewContainer"]::before {
                 content: ""; position: fixed; inset: -20vh 0 0; pointer-events: none; z-index: 0;
-                background-image: radial-gradient(2px 2px at 18% 16%, #fff 98%, transparent), radial-gradient(2px 2px at 58% 38%, #fff 98%, transparent), radial-gradient(2px 2px at 86% 24%, #fff 98%, transparent);
-                background-size: 460px 560px; opacity: .24; animation: magic-snow 20s linear infinite;
+                background-image: radial-gradient(3px 3px at 12% 12%, #fff 98%, transparent), radial-gradient(2px 2px at 34% 42%, #fff 98%, transparent), radial-gradient(3px 3px at 59% 19%, #fff 98%, transparent), radial-gradient(2px 2px at 82% 51%, #fff 98%, transparent), radial-gradient(2px 2px at 94% 23%, #fff 98%, transparent);
+                background-size: 340px 420px; opacity: .46; animation: magic-snow 12s linear infinite;
             }
             @keyframes magic-snow { from { transform: translateY(-8vh); } to { transform: translateY(24vh); } }
         """
@@ -293,7 +293,7 @@ def _render_doctor_plant_context(lang: str, round_number: int) -> None:
 @st.fragment(run_every="3s")
 def render_game_lobby(lang: str) -> None:
     mn = lang == "mn"
-    st.subheader("🎭 Mafia тоглоом" if mn else "🎭 Mafia game")
+    st.subheader("🎭 Magic Town Mafia")
 
     try:
         db = get_supabase_client()

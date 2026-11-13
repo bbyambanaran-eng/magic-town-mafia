@@ -29,7 +29,7 @@ RETRY_SECONDS = 60
 
 def main() -> None:
     st.set_page_config(
-        page_title="Magic Town",
+        page_title="Magic Town Mafia",
         layout="wide",
         initial_sidebar_state="collapsed",
     )
