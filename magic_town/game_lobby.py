@@ -111,7 +111,15 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
 
         for player in players:
             host_label = " (Хотын дарга)" if mn else " (Mayor / host)"
-            st.write(f"• {player['name']}{host_label if player.get('is_host') else ''}")
+            eliminated_label = (
+                (" (хасагдсан)" if mn else " (eliminated)")
+                if not player.get("is_alive", True) and not player.get("is_host")
+                else ""
+            )
+            st.write(
+                f"• {player['name']}"
+                f"{host_label if player.get('is_host') else eliminated_label}"
+            )
 
             # Тоглогч зөвхөн өөрийнхөө дүрийг харна.
             if player["id"] == player_id and player.get("role"):
@@ -134,6 +142,9 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
             None,
         )
         is_host = bool(current_player and current_player.get("is_host"))
+
+        if phase != "lobby":
+            _render_latest_public_event(db, room_id, players)
 
         if phase == "lobby":
             if is_host:
@@ -242,6 +253,37 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
             st.code(f"{type(exc).__name__}: {exc}")
 
 
+def _record_public_event(db, room_id: str, players: list[dict], body: str) -> None:
+    host = next((p for p in players if p.get("is_host")), None)
+    if not host:
+        return
+    try:
+        db.table("game_messages").insert({
+            "room_id": room_id,
+            "player_id": host["id"],
+            "body": f"📣 {body}",
+        }).execute()
+    except Exception:
+        pass
+
+
+def _render_latest_public_event(db, room_id: str, players: list[dict]) -> None:
+    host_ids = {p["id"] for p in players if p.get("is_host")}
+    if not host_ids:
+        return
+    try:
+        messages = (db.table("game_messages").select("player_id, body")
+            .eq("room_id", room_id).order("created_at", desc=True)
+            .limit(50).execute().data)
+        event = next((m["body"] for m in messages
+                      if m["player_id"] in host_ids
+                      and m.get("body", "").startswith("📣 ")), None)
+        if event:
+            st.info(event[2:])
+    except Exception:
+        pass
+
+
 def _render_day_chat_and_vote(
     db,
     room_id: str,
@@ -256,16 +298,25 @@ def _render_day_chat_and_vote(
         (player for player in players if player["id"] == player_id),
         None,
     )
+    can_chat = bool(current_player and current_player.get("is_alive", True))
 
     st.subheader("💬 Өдрийн чат" if mn else "💬 Day chat")
 
-    with st.form("mafia_chat_form", clear_on_submit=True):
-        message = st.text_input("Мессеж" if mn else "Message")
-        send_message = st.form_submit_button(
-            "Илгээх" if mn else "Send"
+    if not can_chat:
+        st.info(
+            "Та хасагдсан тул тоглоомыг ажиглаж болно, гэхдээ чат бичихгүй."
+            if mn else "You are eliminated. You can spectate, but cannot send chat messages."
         )
 
-    if send_message and current_player and message.strip():
+    with st.form("mafia_chat_form", clear_on_submit=True):
+        message = st.text_input(
+            "Мессеж" if mn else "Message", disabled=not can_chat
+        )
+        send_message = st.form_submit_button(
+            "Илгээх" if mn else "Send", disabled=not can_chat
+        )
+
+    if send_message and can_chat and message.strip():
         try:
             (
                 db.table("game_messages")
@@ -471,6 +522,26 @@ def _resolve_day_vote(
         "phase": "finished" if winner else "night"
     }).eq("id", room_id).execute()
 
+    player_names = {p["id"]: p["name"] for p in alive_players}
+    tally_text = ", ".join(
+        f"{player_names.get(p['id'], 'Player')}: {tally.get(p['id'], 0)}"
+        for p in alive_players
+    )
+    if eliminated:
+        eliminated_name = player_names.get(eliminated, "Player")
+        event = (
+            f"📊 Өдрийн саналын дүн — {tally_text}. {eliminated_name} олонхийн саналаар хасагдлаа. Шөнө эхэллээ."
+            if mn else
+            f"📊 Day vote results — {tally_text}. {eliminated_name} was eliminated by the vote. Night begins."
+        )
+    else:
+        event = (
+            f"📊 Өдрийн саналын дүн — {tally_text}. Санал тэнцсэн тул хэн ч хасагдсангүй. Шөнө эхэллээ."
+            if mn else
+            f"📊 Day vote results — {tally_text}. The vote was tied; nobody was eliminated. Night begins."
+        )
+    _record_public_event(db, room_id, players, event)
+
     if eliminated:
         name = next((p["name"] for p in players if p["id"] == eliminated), "Player")
         if mn:
@@ -524,14 +595,14 @@ def _render_detective_action(db, room_id: str, player_id: str,
 
     st.subheader("🕵️ Цагдаагийн шалгалт" if mn else "🕵️ Detective check")
     st.caption(
-        "Өдрийн чатаар бусадтай ярилцаж болно. Нэг тоглогчийн дүрийг зөвхөн та нууцаар шалгана."
-        if mn else "Use the public day chat to talk. You can privately check one player's role."
+        "Бүх тоглолтын турш нэг хүнийг л нууцаар шалгана. Өөрийгөө цагдаа гэж зарлахгүйгээр өдрийн чатаар бусдыг ятга."
+        if mn else "You can secretly investigate only one player for the entire game. Persuade others in day chat without claiming to be the Detective."
     )
     alive = [p for p in players if p.get("is_alive", True) and p["id"] != player_id]
     if not alive:
         return
-    actions = (db.table("game_votes").select("target_id")
-        .eq("room_id", room_id).eq("round_number", round_number)
+    actions = (db.table("game_votes").select("target_id, round_number")
+        .eq("room_id", room_id)
         .eq("phase", "night").eq("voter_id", player_id)
         .limit(1).execute().data)
     if actions:
@@ -541,8 +612,8 @@ def _render_detective_action(db, room_id: str, player_id: str,
             result = ("Мафийн тал" if is_mafia else "Мафийн тал биш") if mn else ("Mafia" if is_mafia else "Not Mafia")
             st.success(f"{target['name']}: {result}")
         st.caption(
-            "Энэ раундад шалгах эрхээ ашигласан. Өдрийн чатаар бусдыг ятгаж болно."
-            if mn else "You used this round's investigation. Use day chat to persuade the others."
+            "Энэ тоглолтын ганц шалгалтаа ашигласан. Өдрийн чатаар бусдыг ятгаж болно."
+            if mn else "You used your one investigation for this game. Use day chat to persuade the others."
         )
         return
 
@@ -684,19 +755,30 @@ def _resolve_night(db, room_id: str, round_number: int, mafia_votes: list[dict],
         updates["round_number"] = round_number + 1
     db.table("game_rooms").update(updates).eq("id", room_id).execute()
 
-    host = next((p for p in players if p.get("is_host")), None)
-    if host:
+    victim_name = next((p["name"] for p in players if p["id"] == eliminated), "Тоглогч" if mn else "A player")
+    if eliminated:
         public_text = (
-            (f"🌅 Өглөө боллоо. {next((p['name'] for p in players if p['id'] == eliminated), 'Тоглогч')} шөнө нас барлаа." if eliminated else "🌅 Өглөө боллоо. Энэ шөнө хүн нас барсангүй.")
+            f"🌅 Өглөө боллоо. {victim_name} шөнө нас барлаа. Эмч өөр хүнийг хамгаалсан тул аварч чадсангүй."
+            if mn and protected else
+            f"🌅 Өглөө боллоо. {victim_name} шөнө нас барлаа. Эмч энэ шөнө хамгаалж чадсангүй."
             if mn else
-            (f"🌅 Morning. {next((p['name'] for p in players if p['id'] == eliminated), 'A player')} died overnight." if eliminated else "🌅 Morning. Nobody died overnight.")
+            f"🌅 Morning. {victim_name} died overnight. The Doctor protected someone else and could not save them."
+            if protected else
+            f"🌅 Morning. {victim_name} died overnight. The Doctor did not protect them."
         )
-        try:
-            db.table("game_messages").insert({
-                "room_id": room_id, "player_id": host["id"], "body": public_text,
-            }).execute()
-        except Exception:
-            pass
+    elif mafia_target and mafia_target == protected:
+        public_text = (
+            "🌅 Өглөө боллоо. Энэ шөнө хүн нас барсангүй. Эмч мафийн онилсон хүнийг аварлаа."
+            if mn else
+            "🌅 Morning. Nobody died. The Doctor saved the Mafia's target."
+        )
+    else:
+        public_text = (
+            "🌅 Өглөө боллоо. Мафийн санал тэнцсэн тул хүн нас барсангүй."
+            if mn else
+            "🌅 Morning. The Mafia vote was tied, so nobody died."
+        )
+    _record_public_event(db, room_id, players, public_text)
 
     if eliminated:
         name = next((p["name"] for p in players if p["id"] == eliminated), "Player")
