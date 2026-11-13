@@ -171,10 +171,23 @@ def _apply_weather_theme(
             color: #263746 !important;
         }
         [data-testid="stMain"] a { color: #244f70 !important; }
-        [data-testid="stMain"] .stButton > button {
+        [data-testid="stMain"] input:not([type="checkbox"]),
+        [data-testid="stMain"] textarea,
+        [data-testid="stMain"] [data-baseweb="select"] > div {
+            color: #263746 !important;
+            background-color: rgba(248,250,251,.96) !important;
+            border-color: #718591 !important;
+        }
+        [data-testid="stMain"] input::placeholder,
+        [data-testid="stMain"] textarea::placeholder {
+            color: #5c6c76 !important;
+            opacity: 1 !important;
+        }
+        [data-testid="stMain"] button,
+        [data-testid="stMain"] [role="button"] {
             color: #263746 !important;
             border-color: #657887 !important;
-            background-color: rgba(255,255,255,.72) !important;
+            background-color: rgba(248,250,251,.96) !important;
         }
     """ if is_daylight else ""
 
