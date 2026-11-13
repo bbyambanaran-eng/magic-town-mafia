@@ -31,40 +31,12 @@ def main() -> None:
     st.set_page_config(page_title="Magic Town", layout="wide")
     lang, force = _sidebar()
     _header(lang)
+    render_game_lobby(lang)
 
-    weather_tab, plants_tab, analysis_tab, mafia_tab = st.tabs(
-        [
-            tr(lang, "tab_weather"),
-            tr(lang, "tab_plants"),
-            "Дата анализ" if lang == "mn" else "Data analysis",
-            "🎭 Mafia",
-        ]
-    )
-
-    with weather_tab:
-        _render_section(
-            lang,
-            "weather",
-            tr(lang, "loading_weather"),
-            _render_weather,
-            force,
-        )
-
-    with plants_tab:
-        _render_section(
-            lang,
-            "plants",
-            tr(lang, "loading_plants"),
-            _render_plants,
-            force,
-        )
-
-    with analysis_tab:
+    # Keep the assignment's charts and source notes available without separate
+    # top-level tabs; the game remains the only primary screen.
+    with st.expander("📊 Дата анализ ба эх сурвалж" if lang == "mn" else "📊 Data analysis and sources"):
         _render_analysis(lang, force)
-
-    with mafia_tab:
-        render_game_lobby(lang)
-
 
 def _sidebar() -> tuple[str, bool]:
     if "lang" not in st.session_state:

@@ -1,6 +1,7 @@
 import secrets
 import string
 import random
+import html
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -24,7 +25,7 @@ def _game_plants() -> dict:
     return fetch_plants()
 
 
-def _render_real_world_context(lang: str) -> None:
+def _render_real_world_context(lang: str, game_phase: str) -> None:
     mn = lang == "mn"
     local_zone = ZoneInfo("Asia/Ulaanbaatar")
     now_local = datetime.now(local_zone).replace(tzinfo=None)
@@ -47,11 +48,9 @@ def _render_real_world_context(lang: str) -> None:
                 if mn else f"Weather data for {today_key} has not arrived yet."
             )
             return
-        zone = ZoneInfo(payload.get("timezone", "Asia/Ulaanbaatar"))
-        now_local = datetime.now(zone).replace(tzinfo=None)
-        sunrise = datetime.fromisoformat(today["sunrise"])
-        sunset = datetime.fromisoformat(today["sunset"])
-        is_daylight = sunrise <= now_local < sunset
+        # The shared town theme follows the game phase. Open-Meteo still supplies
+        # the real weather values and the real sunrise/sunset shown below.
+        is_daylight = game_phase != "night"
         weather_code = int(current["weather_code"])
         wind_speed = current.get("wind_speed")
         cloud_cover = current.get("cloud_pct")
@@ -79,7 +78,7 @@ def _render_real_world_context(lang: str) -> None:
         first.metric("Одоо" if mn else "Now", temp_text)
         second.metric("Тэнгэр" if mn else "Conditions", condition)
         third.metric("Салхи" if mn else "Wind", wind_text)
-        fourth.metric("Гадаах үе" if mn else "Outside", sky)
+        fourth.metric("Тоглоомын үе" if mn else "Game phase", sky)
         st.caption(
             f"Огноо: {today['date']} · Өнөөдрийн хэм: {forecast} · Open-Meteo · мэдээний цаг {current['time']} · нар мандах {today['sunrise'][-5:]} / жаргах {today['sunset'][-5:]}"
             if mn else
@@ -185,8 +184,8 @@ def _render_doctor_plant_context(lang: str, round_number: int) -> None:
     mn = lang == "mn"
     with st.container(border=True):
         st.markdown(
-            "**🌿 Монголын бодит ургамлын бүртгэл**"
-            if mn else "**🌿 Real plant record from Mongolia**"
+            "**🌿 Эмчийн ургамлын theme · Монголын бодит GBIF бүртгэл**"
+            if mn else "**🌿 Doctor's plant theme · real GBIF record from Mongolia**"
         )
         try:
             record = _game_plants()
@@ -203,20 +202,28 @@ def _render_doctor_plant_context(lang: str, round_number: int) -> None:
                 return
 
             item = named_records[(max(1, round_number) - 1) % len(named_records)]
-            st.write(f"**{item['scientific_name']}**")
+            plant_name = html.escape(str(item["scientific_name"]))
             details = [
-                value for value in (
+                html.escape(str(value)) for value in (
                     item.get("family"), item.get("state_province"),
                     item.get("locality"), item.get("event_date"),
                 ) if value
             ]
-            if details:
-                st.caption(" · ".join(details))
-            if (item.get("occurrence_url") or "").startswith("https://"):
-                st.markdown(
-                    f"[GBIF ажиглалтын бүртгэл]({item['occurrence_url']})"
-                    if mn else f"[GBIF occurrence record]({item['occurrence_url']})"
-                )
+            record_url = item.get("occurrence_url") or ""
+            link = (
+                f'<a href="{html.escape(record_url, quote=True)}" target="_blank">'
+                f'{"GBIF ажиглалтын бүртгэл" if mn else "GBIF occurrence record"}</a>'
+                if record_url.startswith("https://") else ""
+            )
+            st.markdown(
+                '<div style="padding:1rem 1.2rem;border-radius:12px;'
+                'border:1px solid #4f805d;background:linear-gradient(135deg,#123528,#213e2d);">'
+                f'<div style="font-size:1.25rem;font-weight:700;color:#b7efc5">🌿 {plant_name}</div>'
+                f'<div style="margin-top:.45rem;color:#d5e9d8">{" · ".join(details)}</div>'
+                f'<div style="margin-top:.55rem">{link}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
             st.caption(
                 "Зөвхөн эмчид харагдана; ургамлын дата эмчлэх чадварт нөлөөлөхгүй. GBIF бүртгэл нь ургамлын тоо толгой биш."
                 if mn else
@@ -248,6 +255,7 @@ def render_game_lobby(lang: str) -> None:
         _render_current_room(db, room_id, player_id, lang)
         return
 
+    _render_real_world_context(lang, "lobby")
     _render_create_join(db, lang)
 
 
@@ -283,7 +291,6 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
 
         st.write("Өрөөний код" if mn else "Room code")
         st.code(room["code"])
-        _render_real_world_context(lang)
         st.write(
             f"{'Тоглогчид' if mn else 'Players'}: "
             f"{len(contestants)} / {ROOM_CAPACITY}"
@@ -317,6 +324,7 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
                 )
 
         phase = room.get("phase", "lobby")
+        _render_real_world_context(lang, phase)
         current_player = next(
             (player for player in players if player["id"] == player_id),
             None,
