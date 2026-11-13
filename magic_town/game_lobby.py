@@ -529,7 +529,7 @@ def _render_detective_action(db, room_id: str, player_id: str,
         submit = st.form_submit_button("Нууцаар шалгах" if mn else "Investigate privately")
     if submit:
         try:
-            _save_role_action(db, room_id, round_number, "detective", player_id, choices[selected])
+            _save_role_action(db, room_id, round_number, "night", player_id, choices[selected])
             st.rerun()
         except Exception as exc:
             st.error("Шалгалтыг хадгалж чадсангүй." if mn else "Could not save investigation.")
@@ -538,7 +538,7 @@ def _render_detective_action(db, room_id: str, player_id: str,
 
     actions = (db.table("game_votes").select("target_id")
         .eq("room_id", room_id).eq("round_number", round_number)
-        .eq("phase", "detective").eq("voter_id", player_id)
+        .eq("phase", "night").eq("voter_id", player_id)
         .limit(1).execute().data)
     if actions:
         target = next((p for p in players if p["id"] == actions[0]["target_id"]), None)
@@ -597,7 +597,7 @@ def _render_night(db, room_id: str, player_id: str, players: list[dict],
             heal = st.form_submit_button("Хамгаалах" if mn else "Protect")
         if heal:
             try:
-                _save_role_action(db, room_id, round_number, "doctor", player_id, heal_choices[selected_heal])
+                _save_role_action(db, room_id, round_number, "night", player_id, heal_choices[selected_heal])
                 st.rerun()
             except Exception as exc:
                 st.error("Эмчийн сонголтыг хадгалж чадсангүй." if mn else "Could not save doctor action.")
@@ -610,13 +610,14 @@ def _render_night(db, room_id: str, player_id: str, players: list[dict],
         st.info("Та хасагдсан. Шөнийн үр дүнг хүлээнэ үү." if mn else "You are eliminated. Wait for the night result.")
 
     try:
-        actions = db.table("game_votes").select("voter_id, target_id, phase").eq(
+        actions = db.table("game_votes").select("voter_id, target_id").eq(
             "room_id", room_id
-        ).eq("round_number", round_number).in_("phase", ["night", "doctor"]).execute().data
+        ).eq("round_number", round_number).eq("phase", "night").execute().data
         mafia_ids = {p["id"] for p in mafia}
+        doctor_ids = {p["id"] for p in doctors}
         target_ids = {p["id"] for p in targets}
-        mafia_votes = [v for v in actions if v["phase"] == "night" and v["voter_id"] in mafia_ids and v["target_id"] in target_ids]
-        doctor_votes = [v for v in actions if v["phase"] == "doctor" and any(p["id"] == v["voter_id"] for p in doctors)]
+        mafia_votes = [v for v in actions if v["voter_id"] in mafia_ids and v["target_id"] in target_ids]
+        doctor_votes = [v for v in actions if v["voter_id"] in doctor_ids]
         if is_host:
             ready = len(mafia_votes) >= len(mafia) and len(doctor_votes) >= len(doctors)
             if not ready:
