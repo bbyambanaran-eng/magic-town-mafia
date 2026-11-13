@@ -52,58 +52,129 @@ def _render_real_world_context(lang: str) -> None:
         sunrise = datetime.fromisoformat(today["sunrise"])
         sunset = datetime.fromisoformat(today["sunset"])
         is_daylight = sunrise <= now_local < sunset
-        _apply_day_night_theme(is_daylight)
+        weather_code = int(current["weather_code"])
+        wind_speed = current.get("wind_speed")
+        cloud_cover = current.get("cloud_pct")
+        _apply_weather_theme(
+            is_daylight,
+            weather_code,
+            wind_speed if isinstance(wind_speed, (int, float)) else None,
+            cloud_cover if isinstance(cloud_cover, (int, float)) else None,
+        )
 
         sky = (
             ("☀️ Өдөр" if is_daylight else "🌙 Шөнө")
             if mn else ("☀️ Day" if is_daylight else "🌙 Night")
         )
-        condition = weather_label(int(current["weather_code"]), lang)
+        condition = weather_label(weather_code, lang)
         temp = current.get("temperature_c")
         temp_text = f"{temp:.1f} °C" if isinstance(temp, (int, float)) else "—"
+        wind_text = f"{wind_speed:.1f} m/s" if isinstance(wind_speed, (int, float)) else "—"
         low, high = today.get("temp_min"), today.get("temp_max")
         forecast = (
             f"{low:.1f}° – {high:.1f}°C" if isinstance(low, (int, float)) and isinstance(high, (int, float))
-            else condition
+            else "—"
         )
-        first, second, third = st.columns(3)
-        first.metric("Одоо" if mn else "Now", temp_text, condition)
-        second.metric("Гадаах үе" if mn else "Outside", sky)
-        third.metric("Өнөөдрийн хэм" if mn else "Today's range", forecast)
+        first, second, third, fourth = st.columns(4)
+        first.metric("Одоо" if mn else "Now", temp_text)
+        second.metric("Тэнгэр" if mn else "Conditions", condition)
+        third.metric("Салхи" if mn else "Wind", wind_text)
+        fourth.metric("Гадаах үе" if mn else "Outside", sky)
         st.caption(
-            f"Огноо: {today['date']} · Open-Meteo · мэдээний цаг {current['time']} · нар мандах {today['sunrise'][-5:]} / жаргах {today['sunset'][-5:]}"
+            f"Огноо: {today['date']} · Өнөөдрийн хэм: {forecast} · Open-Meteo · мэдээний цаг {current['time']} · нар мандах {today['sunrise'][-5:]} / жаргах {today['sunset'][-5:]}"
             if mn else
-            f"Date: {today['date']} · Open-Meteo · report time {current['time']} · sunrise {today['sunrise'][-5:]} / sunset {today['sunset'][-5:]}"
+            f"Date: {today['date']} · Today's range: {forecast} · Open-Meteo · report time {current['time']} · sunrise {today['sunrise'][-5:]} / sunset {today['sunset'][-5:]}"
         )
     except Exception:
         st.info(
-            "Цаг агаарын бодит дата ирээгүй тул өдөр/шөнийн төрхийг өөрчлөөгүй. Тоглоом хэвийн үргэлжилнэ."
+            "Цаг агаарын бодит дата ирээгүй тул theme өөрчлөөгүй. Тоглоом хэвийн үргэлжилнэ."
             if mn else
-            "Live weather is unavailable, so the day/night background was not changed. The game continues."
+            "Live weather is unavailable, so the weather theme was not changed. The game continues."
         )
 
 
-def _apply_day_night_theme(is_daylight: bool) -> None:
+def _apply_weather_theme(
+    is_daylight: bool,
+    weather_code: int,
+    wind_speed: float | None,
+    cloud_cover: float | None,
+) -> None:
+    snow_codes = {71, 73, 75, 77, 85, 86}
+    rain_codes = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99}
+    cloud_codes = {2, 3, 45, 48}
+    is_snowing = weather_code in snow_codes
+    is_raining = weather_code in rain_codes
+    is_windy = wind_speed is not None and wind_speed >= 8.0
+    is_cloudy = weather_code in cloud_codes or (cloud_cover is not None and cloud_cover >= 75)
+
     if is_daylight:
-        background = """
-            radial-gradient(circle at 86% 11%, #ffe59a 0 34px, #ffe59a55 36px 60px, transparent 62px),
-            linear-gradient(180deg, #315d76 0%, #314f5c 48%, #263c35 100%)
+        celestial = "radial-gradient(circle at 86% 10%, #ffe89b 0 38px, #ffe89b66 40px 70px, transparent 72px)"
+        sky = "linear-gradient(180deg, #5b9fca 0%, #a9d7e8 52%, #71917c 100%)"
+        if is_snowing:
+            sky = "linear-gradient(180deg, #829daf 0%, #bacbd3 50%, #748895 100%)"
+        elif is_raining:
+            sky = "linear-gradient(180deg, #475968 0%, #687b84 52%, #43545a 100%)"
+        elif is_cloudy:
+            sky = "linear-gradient(180deg, #667e91 0%, #a1b2b8 52%, #637b78 100%)"
+    else:
+        celestial = "radial-gradient(circle at 86% 10%, #f3f0d8 0 25px, #f3f0d866 27px 48px, transparent 50px)"
+        sky = "linear-gradient(180deg, #101b34 0%, #18243a 52%, #10141f 100%)"
+        if is_snowing:
+            sky = "linear-gradient(180deg, #263647 0%, #344451 52%, #1a2631 100%)"
+        elif is_raining:
+            sky = "linear-gradient(180deg, #151b29 0%, #28313d 52%, #111720 100%)"
+        elif is_cloudy:
+            sky = "linear-gradient(180deg, #202b3c 0%, #36414b 52%, #151b25 100%)"
+
+    clouds = (
+        "radial-gradient(ellipse at 18% 17%, #e9f2f366 0 7%, transparent 18%), radial-gradient(ellipse at 43% 13%, #eef5f366 0 8%, transparent 19%), radial-gradient(ellipse at 76% 20%, #e8f0f266 0 8%, transparent 20%),"
+        if is_cloudy or is_snowing or is_raining else ""
+    )
+    if is_snowing:
+        weather_layer = """
+            [data-testid="stAppViewContainer"]::before {
+                content: ""; position: fixed; inset: -20vh 0 0; pointer-events: none; z-index: 0;
+                background-image: radial-gradient(2px 2px at 12% 8%, #fff 98%, transparent), radial-gradient(3px 3px at 31% 26%, #fff 98%, transparent), radial-gradient(2px 2px at 53% 12%, #fff 98%, transparent), radial-gradient(3px 3px at 74% 32%, #fff 98%, transparent), radial-gradient(2px 2px at 91% 17%, #fff 98%, transparent), radial-gradient(2px 2px at 44% 49%, #fff 98%, transparent);
+                background-size: 260px 320px; opacity: .68; animation: magic-snow 12s linear infinite;
+            }
+            @keyframes magic-snow { from { transform: translateY(-8vh); } to { transform: translateY(24vh); } }
+        """
+    elif is_raining:
+        weather_layer = """
+            [data-testid="stAppViewContainer"]::before {
+                content: ""; position: fixed; inset: -20vh 0 0; pointer-events: none; z-index: 0;
+                background-image: repeating-linear-gradient(105deg, transparent 0 28px, #d9e9f244 29px 30px, transparent 31px 58px);
+                opacity: .42; animation: magic-rain 1.2s linear infinite;
+            }
+            @keyframes magic-rain { from { transform: translateY(-8vh); } to { transform: translateY(10vh); } }
         """
     else:
-        background = """
-            radial-gradient(circle at 86% 11%, #f2edcf 0 23px, #f2edcf55 25px 43px, transparent 45px),
-            radial-gradient(circle at 17% 14%, #ffffff 0 1px, transparent 2px),
-            radial-gradient(circle at 35% 25%, #ffffff 0 1px, transparent 2px),
-            radial-gradient(circle at 71% 31%, #ffffff 0 1px, transparent 2px),
-            radial-gradient(circle at 57% 12%, #ffffff 0 1px, transparent 2px),
-            linear-gradient(180deg, #091322 0%, #111a2a 50%, #090d15 100%)
-        """
+        weather_layer = """
+            [data-testid="stAppViewContainer"]::before {
+                content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+                background-image: radial-gradient(2px 2px at 18% 16%, #fff 98%, transparent), radial-gradient(2px 2px at 39% 28%, #fff 98%, transparent), radial-gradient(2px 2px at 71% 14%, #fff 98%, transparent), radial-gradient(2px 2px at 58% 38%, #fff 98%, transparent), radial-gradient(2px 2px at 88% 31%, #fff 98%, transparent);
+                opacity: .5;
+            }
+        """ if not is_daylight else ""
+
+    wind_layer = """
+        [data-testid="stAppViewContainer"]::after {
+            content: ""; position: fixed; inset: 8vh -15vw; pointer-events: none; z-index: 0;
+            background-image: repeating-linear-gradient(170deg, transparent 0 72px, #ffffff36 73px 75px, transparent 76px 142px);
+            opacity: .34; animation: magic-wind 4s ease-in-out infinite alternate;
+        }
+        @keyframes magic-wind { from { transform: translateX(-7vw); } to { transform: translateX(7vw); } }
+    """ if is_windy else ""
+
     st.markdown(
         f"""
         <style>
-        [data-testid="stAppViewContainer"] {{ background: {background}; }}
+        [data-testid="stAppViewContainer"] {{ background: {celestial}, {clouds} {sky}; background-attachment: fixed; }}
+        [data-testid="stMain"] {{ position: relative; z-index: 1; background: transparent; }}
         [data-testid="stHeader"] {{ background: transparent; }}
-        [data-testid="stSidebar"] {{ background-color: rgba(15, 18, 25, .88); }}
+        [data-testid="stSidebar"] {{ position: relative; z-index: 2; background-color: rgba(15, 18, 25, .82); }}
+        {weather_layer}
+        {wind_layer}
         </style>
         """,
         unsafe_allow_html=True,
