@@ -48,7 +48,7 @@ def _render_player_seats(players: list[dict], room_id: str, lang: str) -> None:
     for index, player in enumerate(contestants[:ROOM_CAPACITY]):
         row, col = ring_positions[index]
         portrait = _brand_asset(portraits[player["id"]])
-        name = html.escape(str(player.get("name", "")))
+        seat_label = f"Тоглогч {index + 1}" if lang == "mn" else f"Player {index + 1}"
         if not player.get("is_alive", True):
             status = "Хасагдсан" if lang == "mn" else "Eliminated"
         else:
@@ -56,16 +56,11 @@ def _render_player_seats(players: list[dict], room_id: str, lang: str) -> None:
         cells.append(
             f'<article class="mt-seat" style="grid-row:{row};grid-column:{col}">'
             f'<img src="data:image/webp;base64,{portrait}" alt="Character portrait" />'
-            f'<div class="mt-seat-name">{name}</div>'
+            f'<div class="mt-seat-name">{seat_label}</div>'
             f'<div class="mt-seat-status">{status}</div></article>'
         )
 
-    host = next((player for player in players if player.get("is_host")), None)
-    host_label = (
-        f'{"Хотын дарга" if lang == "mn" else "Mayor"}: '
-        f'{html.escape(str(host.get("name", "")))}'
-        if host else ("Хотын дарга" if lang == "mn" else "Mayor")
-    )
+    host_label = "Хотын дарга" if lang == "mn" else "Mayor"
     center = (
         '<div class="mt-table-center" style="grid-row:2;grid-column:2 / 5">'
         '<span>🌆</span><strong>Magic Town Mafia</strong>'
