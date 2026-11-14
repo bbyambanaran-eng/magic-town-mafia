@@ -15,6 +15,104 @@ from .weather import fetch_weather, weather_label
 
 ROOM_CAPACITY = 12
 ASSET_DIR = Path(__file__).parent / "assets"
+PUBLIC_CHARACTER_PORTRAITS = (
+    "characters/mafia.webp",
+    "characters/doctor.webp",
+    "characters/detective.webp",
+    "characters/citizen_male.webp",
+    "characters/citizen_female.webp",
+)
+
+
+def _render_player_seats(players: list[dict], room_id: str, lang: str) -> None:
+    """Show public character portraits assigned independently from secret roles."""
+    contestants = [player for player in players if not player.get("is_host")]
+    if not contestants:
+        return
+
+    # Seed by room so all clients see the same portrait at each seat. The shuffle
+    # never reads role data, so public portraits cannot disclose a secret role.
+    shuffled = list(contestants)
+    random.Random(f"public-portraits:{room_id}").shuffle(shuffled)
+    portraits = {
+        player["id"]: PUBLIC_CHARACTER_PORTRAITS[index % len(PUBLIC_CHARACTER_PORTRAITS)]
+        for index, player in enumerate(shuffled)
+    }
+
+    # Clockwise positions around the central town-table emblem (up to 12 seats).
+    ring_positions = (
+        (1, 1), (1, 2), (1, 3), (1, 4), (1, 5),
+        (2, 5), (3, 5), (3, 4), (3, 3), (3, 2), (3, 1), (2, 1),
+    )
+    cells = []
+    for index, player in enumerate(contestants[:ROOM_CAPACITY]):
+        row, col = ring_positions[index]
+        portrait = _brand_asset(portraits[player["id"]])
+        name = html.escape(str(player.get("name", "")))
+        if not player.get("is_alive", True):
+            status = "Хасагдсан" if lang == "mn" else "Eliminated"
+        else:
+            status = "Тоглож байна" if lang == "mn" else "Playing"
+        cells.append(
+            f'<article class="mt-seat" style="grid-row:{row};grid-column:{col}">'
+            f'<img src="data:image/webp;base64,{portrait}" alt="Character portrait" />'
+            f'<div class="mt-seat-name">{name}</div>'
+            f'<div class="mt-seat-status">{status}</div></article>'
+        )
+
+    host = next((player for player in players if player.get("is_host")), None)
+    host_label = (
+        f'{"Хотын дарга" if lang == "mn" else "Mayor"}: '
+        f'{html.escape(str(host.get("name", "")))}'
+        if host else ("Хотын дарга" if lang == "mn" else "Mayor")
+    )
+    center = (
+        '<div class="mt-table-center" style="grid-row:2;grid-column:2 / 5">'
+        '<span>🌆</span><strong>Magic Town Mafia</strong>'
+        f'<small>{host_label}</small>'
+        '</div>'
+    )
+    st.markdown(
+        """
+        <style>
+        .mt-seat-board{display:grid;grid-template-columns:repeat(5,minmax(92px,1fr));
+            grid-template-rows:repeat(3,minmax(145px,auto));gap:.6rem;margin:.6rem 0 1rem;
+            padding:1rem;border:1px solid #d9b65e55;border-radius:18px;
+            background:radial-gradient(ellipse at center,#26384b 0,#111c2b 70%);}
+        .mt-seat{min-width:0;overflow:hidden;text-align:center;border:1px solid #d9b65e66;
+            border-radius:13px;background:#101a29eF;box-shadow:0 5px 16px #0006;}
+        .mt-seat img{display:block;width:100%;height:112px;object-fit:cover;object-position:center 28%;}
+        .mt-seat-name{padding:.35rem .25rem 0;color:#fff1c4;font-weight:700;overflow-wrap:anywhere;}
+        .mt-seat-status{padding:0 .2rem .35rem;color:#d5dfeb;font-size:.76rem;}
+        .mt-table-center{align-self:center;justify-self:center;display:flex;flex-direction:column;
+            align-items:center;justify-content:center;gap:.3rem;width:72%;min-height:100px;
+            border:1px solid #d9b65e88;border-radius:999px;text-align:center;
+            color:#f5d98e;background:radial-gradient(ellipse,#31445a,#172536 72%);
+            box-shadow:0 0 25px #d9b65e22;}
+        .mt-table-center span{font-size:1.4rem}.mt-table-center small{color:#d9e1eb}
+        @media(max-width:700px){.mt-seat-board{grid-template-columns:repeat(3,minmax(75px,1fr));
+            grid-template-rows:none;gap:.4rem;padding:.55rem}.mt-seat{grid-row:auto!important;grid-column:auto!important}
+            .mt-seat img{height:100px}.mt-table-center{display:none}}
+        </style>
+        """
+        + '<section class="mt-seat-board">'
+        + "".join(cells)
+        + center
+        + "</section>",
+        unsafe_allow_html=True,
+    )
+
+
+def _private_role_portrait(role: str, player_id: str) -> str:
+    """Resolve a role portrait for the current viewer only."""
+    if role == "mafia":
+        return "characters/mafia.webp"
+    if role == "doctor":
+        return "characters/doctor.webp"
+    if role == "detective":
+        return "characters/detective.webp"
+    citizen_portraits = ("characters/citizen_male.webp", "characters/citizen_female.webp")
+    return random.Random(f"private-citizen:{player_id}").choice(citizen_portraits)
 
 
 @st.cache_data
@@ -451,33 +549,31 @@ def _render_current_room(db, room_id: str, player_id: str, lang: str) -> None:
             f"{'Тоглогчид' if mn else 'Players'}: "
             f"{len(contestants)} / {ROOM_CAPACITY}"
         )
+        _render_player_seats(players, room_id, lang)
 
-        for player in players:
-            host_label = " (Хотын дарга)" if mn else " (Mayor / host)"
-            eliminated_label = (
-                (" (хасагдсан)" if mn else " (eliminated)")
-                if not player.get("is_alive", True) and not player.get("is_host")
-                else ""
+        # Role name and its matching portrait are rendered only in this viewer's
+        # own Streamlit session; public seat portraits above are role-independent.
+        current_player = next(
+            (player for player in players if player["id"] == player_id),
+            None,
+        )
+        if current_player and current_player.get("role"):
+            role_names = {
+                "mafia": ("Мафийн тал", "Mafia"),
+                "doctor": ("Эмч", "Doctor"),
+                "detective": ("Цагдаа", "Detective"),
+                "citizen": ("Иргэн", "Citizen"),
+            }
+            role_name = role_names.get(current_player["role"], ("Тоглогч", "Player"))[0 if mn else 1]
+            st.image(
+                ASSET_DIR / _private_role_portrait(current_player["role"], str(player_id)),
+                width=190,
             )
-            st.write(
-                f"• {player['name']}"
-                f"{host_label if player.get('is_host') else eliminated_label}"
+            st.success(
+                f"Таны нууц дүр: {role_name}"
+                if mn
+                else f"Your secret role: {role_name}"
             )
-
-            # Тоглогч зөвхөн өөрийнхөө дүрийг харна.
-            if player["id"] == player_id and player.get("role"):
-                role_names = {
-                    "mafia": ("Мафийн тал", "Mafia"),
-                    "doctor": ("Эмч", "Doctor"),
-                    "detective": ("Цагдаа", "Detective"),
-                    "citizen": ("Иргэн", "Citizen"),
-                }
-                role_name = role_names.get(player["role"], ("Тоглогч", "Player"))[0 if mn else 1]
-                st.success(
-                    f"Таны нууц дүр: {role_name}"
-                    if mn
-                    else f"Your secret role: {role_name}"
-                )
 
         phase = room.get("phase", "lobby")
         _render_real_world_context(lang, phase)
