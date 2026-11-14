@@ -4,8 +4,6 @@ Only validated real responses are stored. Failures are stored separately and are
 never rendered as observations.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import time
