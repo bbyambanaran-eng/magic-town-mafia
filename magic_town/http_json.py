@@ -6,7 +6,7 @@ import requests
 
 from magic_town.errors import FetchError
 
-USER_AGENT = "MagicTown/0.1 (educational Streamlit app; public weather and GBIF data)"
+USER_AGENT = "MagicTown/0.1 (educational Streamlit app; public Open-Meteo weather data)"
 
 
 def get_json(url: str, params: dict) -> tuple[dict, str]:
